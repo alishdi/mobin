@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: mobin-postgres
+    environment:
+      POSTGRES_USER: mobin_user
+      POSTGRES_PASSWORD: app76012
+      POSTGRES_DB: mobin_db
+    ports:
+      - "5433:5432"  
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly
+    container_name: mobin-dragonfly
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
