@@ -3,19 +3,23 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { User } from '../database/entities/user.entity';
-import { Vehicle } from '../database/entities/vehicle.entity';
+import { Vehicle } from '../database/entities/vehicles/vehicle.entity';
 import { Contract } from '../database/entities/contract.entity';
 import { Payment } from '../database/entities/payment.entity';
 
-import { Role } from '../database/entities/role.entity'; 
-import { Permission } from '../database/entities/permission.entity';
+import { Role } from '../database/entities/role-permission/role.entity';
+import { Permission } from '../database/entities/role-permission/permission.entity';
 
 import { Setting } from '../database/entities/setting.entity';
-import { Menu } from '../database/entities/menu.entity';
+import { Menu } from '../database/entities/menu/menu.entity';
 import { Slider } from '../database/entities/slider.entity';
-import { Footer } from '../database/entities/footer.entity';
-import { Submenu } from '../database/entities/sub-menu.entity'; 
-import { Megamenu } from '../database/entities/mega-menu.entity'; 
+import { Footer } from '../database/entities/footer/footer.entity';
+import { Submenu } from '../database/entities/menu/sub-menu.entity';
+import { Megamenu } from '../database/entities/menu/mega-menu.entity';
+import { Category } from '../database/entities/category/category.entity';
+import { Brand } from '../database/entities/category/brand.entity';
+import { VehicleModel } from '../database/entities/vehicles/vehicle-model.entity';
+import { InstallmentPlan } from '../database/entities/installment/installment-plan.entity';
 
 const dbLogger = new Logger('DatabaseModule');
 
@@ -25,28 +29,50 @@ const dbLogger = new Logger('DatabaseModule');
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        dbLogger.log('🔌 در حال اتصال به PostgreSQL...');
+        const isProd = configService.get<string>('NODE_ENV') === 'production';
+        
+        dbLogger.log(`🔌 در حال اتصال به PostgreSQL (محیط: ${isProd ? 'Production' : 'Development'})...`);
 
         return {
           type: 'postgres',
           url: configService.getOrThrow<string>('DATABASE_URL'),
- entities: [
-  User, Vehicle, Contract, Payment,
-  Role, Permission,
-  Setting, Menu, Submenu, Megamenu, Slider, Footer,
-],
-          synchronize: configService.getOrThrow<string>('NODE_ENV') === 'development',
-          ssl: configService.getOrThrow<string>('NODE_ENV') === 'production'
-            ? { rejectUnauthorized: false }
-            : false,
+          
+          entities: [
+            User, Vehicle, Contract, Payment,
+            Role, Permission,
+            Setting, Menu, Submenu, Megamenu, Slider, Footer,
+            Category, Brand, VehicleModel, InstallmentPlan,
+          ],
+          synchronize: !isProd, 
+          extra: {
+            max: isProd ? 20 : 5,
+            
+            min: isProd ? 2 : 0,
+            
+            idleTimeoutMillis: 30000,
+            
+            connectionTimeoutMillis: 5000,
+            
+            statement_timeout: 10000,
+            
+            ...(isProd && {
+              ssl: { rejectUnauthorized: false },
+            }),
+          },
+          
+          poolSize: isProd ? 20 : 5,
+          retryAttempts: 3,
+          retryDelay: 3000,
         };
       },
     }),
-TypeOrmModule.forFeature([
-  User, Vehicle, Contract, Payment,
-  Role, Permission,
-  Setting, Menu, Submenu, Megamenu, Slider, Footer,
-]),
+    
+    TypeOrmModule.forFeature([
+      User, Vehicle, Contract, Payment,
+      Role, Permission,
+      Setting, Menu, Submenu, Megamenu, Slider, Footer,
+      Category, Brand, VehicleModel, InstallmentPlan, 
+    ]),
   ],
   exports: [TypeOrmModule],
 })

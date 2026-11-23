@@ -10,28 +10,32 @@ import { Role } from './role.entity';
 import { Transform } from 'class-transformer';
 
 export enum PermissionResource {
-    USERS = 'users',
-    ROLES = 'roles',
-    VEHICLES = 'vehicles',
-    CONTRACTS = 'contracts',
-    PAYMENTS = 'payments',
-    SETTINGS = 'settings',
-    MENUS = 'menus',
-    SLIDERS = 'sliders',
-    FOOTERS = 'footers',
-    REPORTS = 'reports',
-    SUBMENUS = 'submenus',     
-    MEGAMENUS = 'megamenus',  
+  USERS = 'users',
+  ROLES = 'roles',
+  VEHICLES = 'vehicles',
+  VEHICLE_MODELS = 'vehicle_models',       
+  INSTALLMENT_PLANS = 'installment_plans',
+  CONTRACTS = 'contracts',
+  PAYMENTS = 'payments',
+  SETTINGS = 'settings',
+  MENUS = 'menus',
+  SUBMENUS = 'submenus',
+  MEGAMENUS = 'megamenus',
+  SLIDERS = 'sliders',
+  FOOTERS = 'footers',
+  REPORTS = 'reports',
+  CATEGORIES = 'categories',
+  BRANDS = 'brands',
 }
 
 export enum PermissionAction {
-    CREATE = 'create',
-    READ = 'read',
-    UPDATE = 'update',
-    DELETE = 'delete',
-    LIST = 'list',
-    EXPORT = 'export',
-    APPROVE = 'approve',
+  CREATE = 'create',
+  READ = 'read',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  APPROVE = 'approve',
+  EXPORT = 'export',
 }
 
 @Entity('permissions')

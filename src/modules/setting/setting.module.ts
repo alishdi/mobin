@@ -11,11 +11,11 @@ import { MegamenuController } from './mega.menu.controller';
 import { MegamenuService } from './megamenu.service';
 
 import { Setting } from '../../database/entities/setting.entity';
-import { Menu } from 'src/database/entities/menu.entity'; 
-import { Submenu } from 'src/database/entities/sub-menu.entity'; 
-import { Megamenu } from 'src/database/entities/mega-menu.entity'; 
+import { Menu } from 'src/database/entities/menu/menu.entity'; 
+import { Submenu } from 'src/database/entities/menu/sub-menu.entity'; 
+import { Megamenu } from 'src/database/entities/menu/mega-menu.entity'; 
 import { Slider } from '../../database/entities/slider.entity';
-import { Footer } from '../../database/entities/footer.entity';
+import { Footer } from '../../database/entities/footer/footer.entity';
 
 @Module({
   imports: [

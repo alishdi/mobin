@@ -9,7 +9,7 @@ import {
   Index,
 } from 'typeorm';
 import { User } from './user.entity';
-import { Vehicle } from './vehicle.entity';
+import { Vehicle } from './vehicles/vehicle.entity';
 import { Transform } from 'class-transformer';
 
 @Entity('contracts')

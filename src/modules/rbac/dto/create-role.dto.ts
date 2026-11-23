@@ -1,6 +1,6 @@
 import { IsString, IsEnum, IsOptional, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RoleName } from '../../../database/entities/role.entity';
+import { RoleName } from '../../../database/entities/role-permission/role.entity';
 
 export class CreateRoleDto {
   @ApiProperty({ 

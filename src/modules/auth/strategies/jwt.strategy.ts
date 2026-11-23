@@ -4,10 +4,9 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Request } from 'express'; // ← اضافه شد
+import { Request } from 'express'; 
 
 import { User } from '../../../database/entities/user.entity';
-import { JwtPayload } from '../interfaces/jwt-payload.interface';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -18,20 +17,20 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
-        ExtractJwt.fromAuthHeaderAsBearerToken(),
         (req: Request) => {
           if (req && req.cookies) {
             return req.cookies['access_token'];
           }
           return null;
         },
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
       ]),
       ignoreExpiration: false,
       secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
     });
   }
 
-  async validate(payload: JwtPayload): Promise<User> {
+  async validate(payload: any): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
       relations: { roles: { permissions: true } },

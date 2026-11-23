@@ -5,7 +5,6 @@ import { ConfigService } from '@nestjs/config';
 export class ConfigHelper {
   constructor(private readonly configService: ConfigService) {}
 
-  // App
   get port(): number {
     return this.configService.getOrThrow<number>('app.port');
   }

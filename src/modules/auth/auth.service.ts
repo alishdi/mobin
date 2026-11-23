@@ -1,150 +1,222 @@
-import { Injectable, UnauthorizedException, ConflictException, Inject } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config'; 
 import * as bcrypt from 'bcrypt';
 
 import { User } from '../../database/entities/user.entity';
-import { Role, RoleName } from '../../database/entities/role.entity';
+import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { TokenStorageService } from './token-storage.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(Role)
-    private readonly roleRepository: Repository<Role>,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
-    @Inject(CACHE_MANAGER)
-    private readonly cacheManager: Cache, 
+    private readonly configService: ConfigService, 
+    private readonly tokenStorage: TokenStorageService,
   ) {}
 
-  async validateUser(phone: string, password: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-      where: { phone },
-      relations: { roles: { permissions: true } },
+  // ==================== LOGIN ====================
+
+  async login(dto: LoginDto) {
+    this.logger.log(`🔐 تلاش برای لاگین با شماره: ${dto.phone}`);
+
+    const user = await this.userRepo.findOne({
+      where: { phone: dto.phone },
+      relations: { roles: true },
     });
 
-    if (!user || !user.password) {
+    if (!user) {
+      this.logger.warn(`❌ کاربر با شماره ${dto.phone} یافت نشد`);
       throw new UnauthorizedException('شماره موبایل یا رمز عبور اشتباه است');
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('شماره موبایل یا رمز عبور اشتباه است');
-    }
+    this.logger.debug(`✅ کاربر یافت شد: ${user.firstName} ${user.lastName}`);
+    this.logger.debug(`   isActive: ${user.isActive}`);
+    this.logger.debug(`   password length: ${user.password?.length || 0}`);
 
     if (!user.isActive) {
       throw new UnauthorizedException('حساب کاربری شما غیرفعال است');
     }
 
-    return user;
-  }
+    const isPasswordValid = await bcrypt.compare(dto.password, user.password);
+    this.logger.debug(`   password valid: ${isPasswordValid}`);
 
-  async generateTokens(user: User) {
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('شماره موبایل یا رمز عبور اشتباه است');
+    }
+
+    user.lastLoginAt = new Date();
+    await this.userRepo.save(user);
+
     const payload = { sub: user.id, phone: user.phone };
 
-    const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
-        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
-        expiresIn: this.configService.getOrThrow<string>('JWT_EXPIRES_IN') as any,
-      }),
-      this.jwtService.signAsync(payload, {
-        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN') as any,
-      }),
-    ]);
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: '60m',
+    });
 
-    const refreshTokenKey = `refresh_token:${user.id}`;
-    await this.cacheManager.set(
-      refreshTokenKey,
-      refreshToken,
-      7 * 24 * 60 * 60 * 1000, 
-    );
+    const refreshToken = this.jwtService.sign(payload, {
+      expiresIn: '7d',
+      secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+    });
 
-    await this.userRepository.update(user.id, { lastLoginAt: new Date() });
+    await this.tokenStorage.saveRefreshToken(user.id, refreshToken);
+
+    this.logger.log(`✅ لاگین موفق برای کاربر ${user.phone}`);
 
     return {
-      accessToken,
-      refreshToken,
-      user: this.sanitizeUser(user),
+      statusCode: 200,
+      message: 'ورود با موفقیت انجام شد',
+      data: {
+        user: {
+          id: user.id,
+          phone: user.phone,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          roles: user.roles,
+        },
+        accessToken,
+        refreshToken,
+      },
     };
   }
 
-  async login(phone: string, password: string) {
-    const user = await this.validateUser(phone, password);
-    return this.generateTokens(user);
-  }
+  // ==================== REGISTER ====================
 
   async register(dto: RegisterDto) {
-    const existingByPhone = await this.userRepository.findOne({ where: { phone: dto.phone } });
-    if (existingByPhone) {
-      throw new ConflictException('این شماره موبایل قبلاً ثبت شده است');
-    }
+    const exists = await this.userRepo.findOne({
+      where: { phone: dto.phone },
+    });
 
-    let userRole = await this.roleRepository.findOne({ where: { name: RoleName.USER } });
-    
-    if (!userRole) {
-      userRole = this.roleRepository.create({
-        name: RoleName.USER,
-        displayName: 'کاربر عادی',
-        description: 'دسترسی محدود به پنل کاربری',
-      });
-      await this.roleRepository.save(userRole);
+    if (exists) {
+      throw new BadRequestException('این شماره موبایل قبلاً ثبت شده است');
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    const newUser = this.userRepository.create({
+    const user = this.userRepo.create({
       phone: dto.phone,
       password: hashedPassword,
       firstName: dto.firstName,
       lastName: dto.lastName,
       email: dto.email,
-      nationalCode: dto.nationalCode,
-      avatarUrl: dto.avatarUrl,
-      roles: [userRole],
+      isVerified: false,
+      isActive: true,
     });
 
-    const savedUser = await this.userRepository.save(newUser);
+    const savedUser = await this.userRepo.save(user);
 
-    const userWithRoles = await this.userRepository.findOne({
-      where: { id: savedUser.id },
-      relations: { roles: { permissions: true } },
+    return {
+      statusCode: 201,
+      message: 'ثبت‌نام با موفقیت انجام شد',
+      data: {
+        id: savedUser.id,
+        phone: savedUser.phone,
+      },
+    };
+  }
+
+  // ==================== REFRESH TOKEN ====================
+
+  async refreshTokens(refreshToken: string) {
+    this.logger.log('🔄 تلاش برای تجدید توکن');
+
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh Token ارسال نشده است');
+    }
+
+    let payload: any;
+    try {
+      payload = this.jwtService.verify(refreshToken, {
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+      });
+    } catch (error:any) {
+      this.logger.warn(`❌ Refresh Token نامعتبر یا منقضی شده: ${error.message}`);
+      throw new UnauthorizedException('Refresh Token نامعتبر است یا منقضی شده است');
+    }
+
+    const isValid = await this.tokenStorage.validateRefreshToken(
+      payload.sub,
+      refreshToken,
+    );
+
+    if (!isValid) {
+      this.logger.warn(`❌ Refresh Token در Redis یافت نشد (خروج شده)`);
+      throw new UnauthorizedException('Refresh Token منقضی شده است');
+    }
+
+    const user = await this.userRepo.findOne({
+      where: { id: payload.sub },
+      relations: { roles: true },
     });
 
-    return this.generateTokens(userWithRoles!);
-  }
-
-
-  async refreshTokens(user: User, refreshToken: string) {
-    const refreshTokenKey = `refresh_token:${user.id}`;
-    const storedRefreshToken = await this.cacheManager.get<string>(refreshTokenKey);
-
-    if (!storedRefreshToken) {
-      throw new UnauthorizedException('لطفاً دوباره وارد شوید');
+    if (!user) {
+      throw new UnauthorizedException('کاربر یافت نشد');
     }
 
-    if (storedRefreshToken !== refreshToken) {
-      throw new UnauthorizedException('Refresh token نامعتبر است. لطفاً دوباره وارد شوید');
+    if (!user.isActive) {
+      throw new UnauthorizedException('حساب کاربری غیرفعال است');
     }
 
-    return this.generateTokens(user);
+    const newPayload = { sub: user.id, phone: user.phone };
+
+    const accessToken = this.jwtService.sign(newPayload, {
+      expiresIn: '60m',
+    });
+
+    const newRefreshToken = this.jwtService.sign(newPayload, {
+      expiresIn: '7d',
+      secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+    });
+
+    await this.tokenStorage.saveRefreshToken(user.id, newRefreshToken);
+
+    this.logger.log(`✅ توکن‌ها با موفقیت تجدید شدند`);
+
+    return {
+      statusCode: 200,
+      message: 'توکن‌ها با موفقیت تجدید شدند',
+      data: {
+        accessToken,
+        refreshToken: newRefreshToken,
+      },
+    };
   }
 
+  // ==================== LOGOUT ====================
 
-  async logout(userId: string): Promise<void> {
-    const refreshTokenKey = `refresh_token:${userId}`;
-    await this.cacheManager.del(refreshTokenKey);
+  async logout(userId: string) {
+    await this.tokenStorage.removeRefreshToken(userId);
+    return {
+      statusCode: 200,
+      message: 'خروج با موفقیت انجام شد',
+    };
   }
 
-  private sanitizeUser(user: User) {
-    const { password, deletedAt, ...sanitized } = user;
-    return sanitized;
+  // ==================== GET ME ====================
+
+  async getMe(userId: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: { roles: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('کاربر یافت نشد');
+    }
+
+    const { password, deletedAt, ...result } = user;
+    return result;
   }
 }

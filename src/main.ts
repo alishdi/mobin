@@ -7,11 +7,13 @@ import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
-
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './common/filters/src/common/filters/global-exception.filter';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { json, urlencoded } from 'express';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -31,6 +33,10 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
+  ServeStaticModule.forRoot({
+    rootPath: join(__dirname, '..', 'public'),
+    serveRoot: '/',
+  })
 
   const apiPrefix = configService.get<string>('API_PREFIX');
   app.setGlobalPrefix(apiPrefix);
@@ -38,7 +44,7 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.use(cookieParser());
 
-  app.useGlobalInterceptors(new ResponseInterceptor());
+  app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

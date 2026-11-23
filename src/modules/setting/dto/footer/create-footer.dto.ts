@@ -1,27 +1,24 @@
 import { IsString, IsOptional, IsInt, IsBoolean, IsEnum, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ToBoolean } from 'src/common/decorators/boolean-transform.decorator'; 
-
-export enum FooterSection {
-  ABOUT = 'about',
-  LINKS = 'links',
-  CONTACT = 'contact',
-  SOCIAL = 'social',
-}
+import { FooterSection } from '../../../../database/entities/footer/footer.entity'; 
+import { ToBoolean } from '../../../../common/decorators/boolean-transform.decorator'
 
 export class CreateFooterDto {
-  @ApiProperty({ example: 'about', enum: FooterSection, type: String })
+  @ApiProperty({ enum: FooterSection, type: String })
   @IsEnum(FooterSection)
   section: FooterSection;
 
-  @ApiProperty({ example: 'درباره ما', type: String })
+  @ApiProperty({ example: 'معرفی مبین خودرو' })
   @IsString()
   title: string;
 
-  @ApiProperty({ example: '{"text": "مبین خودرو، فروش اقساطی خودرو"}', type: String })
+  @ApiProperty({
+    description: 'محتوای بخش به صورت JSON رشته‌ای',
+    example: '{"logoUrl":"...","slogan":"خیابان‌های شهر منتظرن!"}',
+  })
   @IsString()
-  content: string;
+  content: string; // JSON string
 
   @ApiPropertyOptional({ example: 1, type: Number })
   @IsOptional()

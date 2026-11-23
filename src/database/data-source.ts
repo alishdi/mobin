@@ -1,22 +1,24 @@
 import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
 
-// بارگذاری متغیرهای محیطی
 config({ path: `.env.${process.env.NODE_ENV || 'development'}` });
 
-// ✅ ایمپورت تمام Entityها (شامل Submenu و Megamenu)
 import { User } from './entities/user.entity';
-import { Vehicle } from './entities/vehicle.entity';
+import { Vehicle } from './entities/vehicles/vehicle.entity';
 import { Contract } from './entities/contract.entity';
 import { Payment } from './entities/payment.entity';
-import { Role } from './entities/role.entity';
-import { Permission } from './entities/permission.entity';
+import { Role } from './entities/role-permission/role.entity';
+import { Permission } from './entities/role-permission/permission.entity';
 import { Setting } from './entities/setting.entity';
-import { Menu } from './entities/menu.entity';
-import { Submenu } from './entities/sub-menu.entity';    
-import { Megamenu } from './entities/mega-menu.entity'; 
+import { Menu } from './entities/menu/menu.entity';
+import { Submenu } from './entities/menu/sub-menu.entity';
+import { Megamenu } from './entities/menu/mega-menu.entity';
 import { Slider } from './entities/slider.entity';
-import { Footer } from './entities/footer.entity';
+import { Footer } from './entities/footer/footer.entity';
+import { Category } from './entities/category/category.entity';
+import { Brand } from './entities/category/brand.entity';
+import { VehicleModel } from './entities/vehicles/vehicle-model.entity';
+import { InstallmentPlan } from './entities/installment/installment-plan.entity';
 
 export default new DataSource({
   type: 'postgres',
@@ -30,12 +32,16 @@ export default new DataSource({
     Permission,
     Setting,
     Menu,
-    Submenu,    
-    Megamenu,   
+    Submenu,
+    Megamenu,
     Slider,
     Footer,
+    Category,
+    Brand,
+    VehicleModel,
+    InstallmentPlan
   ],
   migrations: ['src/database/migrations/*.ts'],
-  synchronize: false, 
+  synchronize: false,
   logging: true,
 });

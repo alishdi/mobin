@@ -1,91 +1,89 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
-
-import { Menu } from '../../database/entities/menu.entity';
+import { Repository, ILike } from 'typeorm';
+import { Menu } from '../../database/entities/menu/menu.entity';
 import { CreateMenuDto } from './dto/menu/create-menu.dto';
 import { UpdateMenuDto } from './dto/menu/update-menu.dto';
+import { AdminPaginationDto } from '../../common/dto/admin-pagination.dto';
+import { PaginatedResponseDto } from '../../common/dto/pagination-response.dto';
+import { CacheClearService } from '../../common/services/cache-clear.service';
 
 @Injectable()
 export class MenuService {
-    private readonly CACHE_PREFIX = 'menus:';
-    private readonly CACHE_TTL = 3600;
+  constructor(
+    @InjectRepository(Menu) private readonly menuRepo: Repository<Menu>,
+    private readonly cacheClearService: CacheClearService,
+  ) {}
 
-    constructor(
-        @InjectRepository(Menu) private readonly menuRepo: Repository<Menu>,
-        @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
-    ) { }
+  async getFullTree(): Promise<Menu[]> {
+    const menus = await this.menuRepo.find({
+      where: { isActive: true },
+      relations: { submenus: { megamenus: true } },
+      order: { order: 'ASC' },
+    });
 
-    async findAll(): Promise<Menu[]> {
-        return this.menuRepo.find({
-            relations: { submenus: { megamenus: true } },
-            order: { order: 'ASC' },
-        });
+    return menus.map(menu => ({
+      ...menu,
+      submenus: menu.submenus
+        .filter(s => s.isActive)
+        .map(s => ({ ...s, megamenus: s.megamenus.filter(m => m.isActive) })),
+    }));
+  }
+
+  async findAllForAdmin(q: AdminPaginationDto): Promise<PaginatedResponseDto<Menu>> {
+    let where: any = {};
+
+    if (q.search) {
+      const searchPattern = ILike(`%${q.search}%`);
+      where = [{ title: searchPattern }, { url: searchPattern }];
     }
 
-    async findOne(id: string): Promise<Menu> {
-        const menu = await this.menuRepo.findOne({
-            where: { id },
-            relations: { submenus: { megamenus: true } },
-        });
-        if (!menu) throw new NotFoundException('منو یافت نشد');
-        return menu;
-    }
+    const [data, total] = await this.menuRepo.findAndCount({
+      where,
+      relations: { submenus: { megamenus: true } },
+      select: {
+        id: true, title: true, url: true, icon: true, description: true,
+        order: true, isActive: true, openInNewTab: true,
+        createdAt: true, updatedAt: true,
+      },
+      order: { [q.sortBy || 'order']: q.sortOrder || 'ASC' },
+      skip: q.skip,
+      take: q.limit,
+    });
 
-    async create(dto: CreateMenuDto): Promise<Menu> {
-        const menu = this.menuRepo.create(dto);
-        const saved = await this.menuRepo.save(menu);
-        await this.clearMenuCache();
-        return saved;
-    }
+    return PaginatedResponseDto.create(data, total, q.page!, q.limit!);
+  }
 
-    async update(id: string, dto: UpdateMenuDto): Promise<Menu> {
-        const menu = await this.menuRepo.findOne({ where: { id } });
-        if (!menu) throw new NotFoundException('منو یافت نشد');
-        Object.assign(menu, dto);
-        const saved = await this.menuRepo.save(menu);
-        await this.clearMenuCache();
-        return saved;
-    }
+  async findOne(id: string): Promise<Menu> {
+    const menu = await this.menuRepo.findOne({
+      where: { id },
+      relations: { submenus: { megamenus: true } },
+    });
+    if (!menu) throw new NotFoundException('منو یافت نشد');
+    return menu;
+  }
 
-    async remove(id: string): Promise<void> {
-        const menu = await this.menuRepo.findOne({ where: { id } });
-        if (!menu) throw new NotFoundException('منو یافت نشد');
-        await this.menuRepo.remove(menu);
-        await this.clearMenuCache();
-    }
+  async create(dto: CreateMenuDto): Promise<Menu> {
+    const saved = await this.menuRepo.save(this.menuRepo.create(dto));
+    await this.cacheClearService.clearByPattern('cache:*menus*');
+    return saved;
+  }
 
-    async getFullTree(): Promise<Menu[]> {
-        const cacheKey = `${this.CACHE_PREFIX}tree`;
-        const cached = await this.cacheManager.get<Menu[]>(cacheKey);
-        if (cached) return cached;
+  async update(id: string, dto: UpdateMenuDto): Promise<Menu> {
+    const menu = await this.menuRepo.findOne({ where: { id } });
+    if (!menu) throw new NotFoundException('منو یافت نشد');
 
-        const menus = await this.menuRepo.find({
-            where: { isActive: true },
-            relations: { submenus: { megamenus: true } },
-            order: { order: 'ASC' },
-        });
+    Object.assign(menu, dto);
+    const saved = await this.menuRepo.save(menu);
+    await this.cacheClearService.clearByPattern('cache:*menus*');
+    return saved;
+  }
 
-        // ✅ این خط را اضافه کنید تا خروجی خام دیتابیس را ببینید
-        console.log('🔍 [DEBUG] Raw Menus from DB:', JSON.stringify(menus.map(m => ({ id: m.id, title: m.title, submenusCount: m.submenus?.length }))));
+  async remove(id: string): Promise<void> {
+    const menu = await this.menuRepo.findOne({ where: { id } });
+    if (!menu) throw new NotFoundException('منو یافت نشد');
 
-        const filtered = menus.map(menu => ({
-            ...menu,
-            submenus: menu.submenus
-                ? menu.submenus.filter(s => s.isActive).map(s => ({
-                    ...s,
-                    megamenus: s.megamenus ? s.megamenus.filter(m => m.isActive) : [],
-                }))
-                : [],
-        }));
-
-        await this.cacheManager.set(cacheKey, filtered, this.CACHE_TTL);
-        return filtered;
-    }
-
-    private async clearMenuCache(): Promise<void> {
-        await this.cacheManager.del(`${this.CACHE_PREFIX}tree`);
-    }
+    await this.menuRepo.remove(menu);
+    await this.cacheClearService.clearByPattern('cache:*menus*');
+  }
 }
