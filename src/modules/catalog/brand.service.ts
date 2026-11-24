@@ -5,183 +5,195 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Brand } from '../../database/entities/category/brand.entity';
-import { Category } from '../../database/entities/category/category.entity';
+import { Brand } from '../../database/entities/product/brand.entity'; 
+import { Product } from '../../database/entities/product/product.entity'; 
 import { CreateBrandDto } from './dto/create-brand.dto';
 import { UpdateBrandDto } from './dto/update-brand.dto';
+import { BrandFilterDto } from './dto/brand-filter.dto'; 
 import { AdminPaginationDto } from '../../common/dto/admin-pagination.dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination-response.dto';
 import { CacheClearService } from '../../common/services/cache-clear.service';
-
-const VALID_SORT_FIELDS = ['createdAt', 'updatedAt', 'order', 'title'] as const;
-type SortField = typeof VALID_SORT_FIELDS[number];
+import { Vehicle } from '../../database/entities/vehicles/vehicle.entity';
 
 @Injectable()
 export class BrandService {
   constructor(
     @InjectRepository(Brand) private readonly brandRepo: Repository<Brand>,
-    @InjectRepository(Category) private readonly categoryRepo: Repository<Category>,
+    @InjectRepository(Product) private readonly productRepo: Repository<Product>,
+    @InjectRepository(Vehicle) private readonly vehicleRepo: Repository<Vehicle>,
+
     private readonly cacheClearService: CacheClearService,
   ) {}
 
-  async findActiveByCategorySlug(
-    slug: string,
-    q: AdminPaginationDto,
-  ): Promise<PaginatedResponseDto<Partial<Brand>>> {
-    const category = await this.categoryRepo.findOne({
-      where: { slug, isActive: true },
-      select: { id: true },
-    });
-    if (!category) throw new NotFoundException('دسته‌بندی یافت نشد');
+  // ==================== Public ====================
+
+  async findActiveByProductSlug(slug: string, filter: BrandFilterDto): Promise<PaginatedResponseDto<Brand>> {
+    const { page = 1, limit = 20, isActive = true } = filter;
+
+    const product = await this.productRepo.findOne({ where: { slug, isActive: true } });
+    if (!product) throw new NotFoundException('دسته‌بندی یافت نشد');
 
     const qb = this.brandRepo
       .createQueryBuilder('brand')
+      .leftJoinAndSelect('brand.product', 'product')
+      .where('brand.product_id = :productId', { productId: product.id })
+      .andWhere('brand.isActive = :isActive', { isActive })
       .select([
         'brand.id', 'brand.title', 'brand.slug', 'brand.logoUrl',
-        'brand.icon', 'brand.order',
+        'brand.description', 'brand.order', 'brand.isActive',
+        'brand.createdAt', 'brand.updatedAt',
+        'product.id', 'product.title', 'product.slug',
       ])
-      .where('brand.category_id = :categoryId', { categoryId: category.id })
-      .andWhere('brand.isActive = :active', { active: true });
+      .orderBy('brand.order', 'ASC');
 
-    this.applySearch(qb, q.search);
+    qb.skip((page - 1) * limit).take(limit);
 
-    qb.orderBy('brand.order', 'ASC')
-      .skip(q.skip)  // ✅ امن شد
-      .take(q.limit);
-
-    const [brands, total] = await qb.getManyAndCount();
-    return PaginatedResponseDto.create(brands, total, q.page, q.limit);
+    const [data, total] = await qb.getManyAndCount();
+    return PaginatedResponseDto.create(data, total, page, limit);
   }
-
-  async findBySlug(slug: string): Promise<Partial<Brand>> {
+  async findBrandPage(slug: string): Promise<any> {
     const brand = await this.brandRepo.findOne({
-      where: { slug, isActive: true }, // ✅ فقط فعال‌ها
+      where: { slug, isActive: true },
+      relations: { product: true },
+    });
+    if (!brand) throw new NotFoundException('برند یافت نشد');
+
+    const vehicles = await this.vehicleRepo.find({
+      where: { brand: { id: brand.id }, isActive: true },
+      relations: { models: { installmentPlans: true } },
+      order: { order: 'ASC' },
+    });
+
+    const formattedVehicles = vehicles.map((v) => ({
+      id: v.id,
+      title: v.title,
+      slug: v.slug,
+      description: v.description,
+      imageUrl: v.imageUrl,
+      anchor: `vehicle-${v.id}`,
+      models: (v.models || [])
+        .filter((m) => m.isActive)
+        .sort((a, b) => a.order - b.order)
+        .map((m) => ({
+          id: m.id,
+          title: m.title,
+          slug: m.slug,
+          year: m.year,
+          mileage: m.mileage,
+          imageUrl: m.imageUrl,
+          isFeatured: m.isFeatured,
+          anchor: `model-${m.id}`,
+          // ✅ تمام اطلاعات مالی اکنون از داخل آرایه installmentPlans خوانده می‌شود
+          installmentPlans: (m.installmentPlans || [])
+            .filter((p) => p.isActive)
+            .sort((a, b) => a.durationMonths - b.durationMonths)
+            .map((p) => ({
+              id: p.id,
+              durationMonths: p.durationMonths,
+              monthlyAmount: p.monthlyAmount,
+              totalInstallments: p.totalInstallments,
+              firstDownPayment: p.firstDownPayment, // ✅ از Plan خوانده می‌شود
+              totalPrice: p.totalPrice,             // ✅ از Plan خوانده می‌شود
+              secondDownPaymentMonth: p.secondDownPaymentMonth, // ✅ فرمول داینامیک
+              isHighlighted: p.isHighlighted,
+            })),
+        })),
+    }));
+
+    return {
+      brand: {
+        id: brand.id, title: brand.title, slug: brand.slug,
+        logoUrl: brand.logoUrl, description: brand.description,
+        product: { id: brand.product.id, title: brand.product.title, slug: brand.product.slug },
+      },
+      vehicles: formattedVehicles,
+    };
+  }
+  async findBySlug(slug: string): Promise<Brand> {
+    const brand = await this.brandRepo.findOne({
+      where: { slug },
+      relations: { product: true },
       select: {
         id: true, title: true, slug: true, logoUrl: true,
-        description: true, order: true,
+        description: true, order: true, isActive: true,
+        product: { id: true, title: true, slug: true },
       },
     });
     if (!brand) throw new NotFoundException('برند یافت نشد');
     return brand;
   }
 
+  // ==================== Admin ====================
+
   async findAllForAdmin(q: AdminPaginationDto): Promise<PaginatedResponseDto<Brand>> {
-    const { page, limit, sortBy, sortOrder, search } = q;
+    const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'DESC', search } = q;
+    const searchTerm = search?.trim();
 
     const qb = this.brandRepo
       .createQueryBuilder('brand')
-      .leftJoin('brand.category', 'category') 
-      .addSelect([
-        'category.id', 'category.title', 'category.slug',
-      ])
+      .leftJoinAndSelect('brand.product', 'product')
       .select([
         'brand.id', 'brand.title', 'brand.slug', 'brand.logoUrl',
         'brand.description', 'brand.order', 'brand.isActive',
         'brand.createdAt', 'brand.updatedAt',
+        'product.id', 'product.title', 'product.slug',
       ]);
 
-    this.applySearch(qb, search);
+    if (searchTerm && searchTerm.length >= 2) {
+      const words = searchTerm.split(/\s+/).filter((w) => w.length >= 2);
+      if (words.length > 0) {
+        const conditions = words.map((_, i) =>
+          `(brand.title ILIKE :w${i} OR brand.slug ILIKE :w${i} OR brand.description ILIKE :w${i})`,
+        );
+        const params = words.reduce((a, w, i) => ({ ...a, [`w${i}`]: `%${w}%` }), {} as Record<string, string>);
+        qb.andWhere(`(${conditions.join(' OR ')})`, params);
+      }
+    }
 
-    const safeSortBy: SortField = (VALID_SORT_FIELDS as readonly string[]).includes(sortBy)
-      ? (sortBy as SortField)
-      : 'createdAt';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    qb.orderBy(`brand.${safeSortBy}`, safeSortOrder)
-      .skip(q.skip)
-      .take(limit);
+    const valid = ['createdAt', 'updatedAt', 'order', 'title'];
+    qb.orderBy(`brand.${valid.includes(sortBy) ? sortBy : 'createdAt'}`, sortOrder === 'ASC' ? 'ASC' : 'DESC');
+    qb.skip((page - 1) * limit).take(limit);
 
     const [data, total] = await qb.getManyAndCount();
     return PaginatedResponseDto.create(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<Brand> {
-    const brand = await this.brandRepo.findOne({
-      where: { id },
-      relations: { category: true },
-    });
+    const brand = await this.brandRepo.findOne({ where: { id }, relations: { product: true } });
     if (!brand) throw new NotFoundException('برند یافت نشد');
     return brand;
   }
 
-  async create(categoryId: string, dto: CreateBrandDto): Promise<Brand> {
-    const category = await this.categoryRepo.findOne({
-      where: { id: categoryId },
-      select: { id: true, title: true, slug: true },
-    });
-    if (!category) throw new NotFoundException('دسته‌بندی والد یافت نشد');
-
-    const exists = await this.brandRepo.findOne({
-      where: { slug: dto.slug },
-      select: { id: true },
-    });
+  async create(productId: string, dto: CreateBrandDto): Promise<Brand> {
+    const product = await this.productRepo.findOne({ where: { id: productId } });
+    if (!product) throw new NotFoundException('دسته‌بندی والد یافت نشد');
+    const exists = await this.brandRepo.findOne({ where: { slug: dto.slug } });
     if (exists) throw new ConflictException('این slug قبلاً استفاده شده است');
-
-    const saved = await this.brandRepo.save(this.brandRepo.create({ ...dto, category }));
-    await this.clearCache();
+    const saved = await this.brandRepo.save(this.brandRepo.create({ ...dto, product }));
+    await this.cacheClearService.clearByPattern('cache:*brands*');
+    await this.cacheClearService.clearByPattern('cache:*products*');
     return saved;
   }
 
   async update(id: string, dto: UpdateBrandDto): Promise<Brand> {
     const brand = await this.brandRepo.findOne({ where: { id } });
     if (!brand) throw new NotFoundException('برند یافت نشد');
-
     if (dto.slug && dto.slug !== brand.slug) {
-      const exists = await this.brandRepo.findOne({
-        where: { slug: dto.slug },
-        select: { id: true },
-      });
+      const exists = await this.brandRepo.findOne({ where: { slug: dto.slug } });
       if (exists) throw new ConflictException('این slug قبلاً استفاده شده است');
     }
-
-    const allowed: (keyof UpdateBrandDto)[] = [
-      'title', 'slug', 'logoUrl', 'description', 'order', 'isActive',
-    ];
-    for (const key of allowed) {
-      if (dto[key] !== undefined) {
-        (brand as any)[key] = dto[key];
-      }
-    }
-
+    Object.assign(brand, dto);
     const saved = await this.brandRepo.save(brand);
-    await this.clearCache();
+    await this.cacheClearService.clearByPattern('cache:*brands*');
+    await this.cacheClearService.clearByPattern('cache:*products*');
     return saved;
   }
 
   async remove(id: string): Promise<void> {
-    const brand = await this.brandRepo.findOne({
-      where: { id },
-      select: { id: true },
-    });
+    const brand = await this.brandRepo.findOne({ where: { id } });
     if (!brand) throw new NotFoundException('برند یافت نشد');
-
     await this.brandRepo.remove(brand);
-    await this.clearCache();
-  }
-
-  private applySearch(qb: any, search?: string): void {
-    const term = search?.trim();
-    if (!term || term.length < 2) return;
-
-    const words = [...new Set(term.split(/\s+/).filter((w) => w.length >= 2))];
-    if (words.length === 0) return;
-
-    const conditions: string[] = [];
-    const params: Record<string, string> = {};
-
-    words.forEach((word, i) => {
-      const key = `brandWord${i}`;
-      conditions.push(
-        `(brand.title ILIKE :${key} OR brand.slug ILIKE :${key} OR brand.description ILIKE :${key})`,
-      );
-      params[key] = `%${word}%`;
-    });
-
-    qb.andWhere(`(${conditions.join(' OR ')})`, params);
-  }
-
-  private async clearCache(): Promise<void> {
     await this.cacheClearService.clearByPattern('cache:*brands*');
-    await this.cacheClearService.clearByPattern('cache:*categories*');
+    await this.cacheClearService.clearByPattern('cache:*products*');
   }
 }

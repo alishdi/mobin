@@ -14,7 +14,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { PermissionsGuard } from './modules/auth/guards/permissions.guard';
 import { RbacModule } from './modules/rbac/rbac.module';
-import { CatalogModule } from './modules/catalog/catalog.module';
+import { CatalogModule } from './modules/catalog/product.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { UsersModule } from './modules/users/user.module';

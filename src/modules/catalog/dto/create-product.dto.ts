@@ -3,7 +3,7 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ToBoolean } from '../../../common/decorators/boolean-transform.decorator';
 
-export class CreateCategoryDto {
+export class CreateProductDto {
   @ApiProperty({ example: 'خودروهای داخلی' })
   @IsString()
   title: string;
@@ -18,7 +18,7 @@ export class CreateCategoryDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ example: '/assets/categories/domestic.jpg' })
+  @ApiPropertyOptional({ example: '/assets/products/domestic.jpg' })
   @IsOptional()
   @IsString()
   imageUrl?: string;

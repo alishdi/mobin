@@ -7,45 +7,22 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InstallmentPlan } from '../../database/entities/installment/installment-plan.entity';
 import { VehicleModel } from '../../database/entities/vehicles/vehicle-model.entity';
-import { CreateInstallmentPlanDto } from './dto/create-installment-plan.dto'; // ✅ ایمپورت شود
 import { UpdateInstallmentPlanDto } from './dto/update-installment-plan.dto';
 import { BulkCreateInstallmentPlansDto } from './dto/bulk-create-installment-plans.dto';
+import { InstallmentFilterDto } from './dto/filter-installment.dto';
 import { AdminPaginationDto } from '../../common/dto/admin-pagination.dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination-response.dto';
-import { CacheClearService } from '../../common/services/cache-clear.service'; // ✅ ایمپورت شود
+import { CacheClearService } from '../../common/services/cache-clear.service';
 
 @Injectable()
 export class InstallmentPlanService {
   constructor(
     @InjectRepository(InstallmentPlan) private readonly planRepo: Repository<InstallmentPlan>,
     @InjectRepository(VehicleModel) private readonly modelRepo: Repository<VehicleModel>,
-    private readonly cacheClearService: CacheClearService, // ✅ تزریق شده
-  ) {}
+    private readonly cacheClearService: CacheClearService,
+  ) { }
 
-  // ==================== متد جدید: ساخت تکی ====================
-  async create(dto: CreateInstallmentPlanDto): Promise<InstallmentPlan> {
-    // ۱. بررسی وجود مدل خودرو
-    const model = await this.modelRepo.findOne({ where: { id: dto.modelId } });
-    if (!model) {
-      throw new NotFoundException('مدل خودرو یافت نشد');
-    }
-
-    // ۲. ساخت و ذخیره طرح اقساط
-    const plan = this.planRepo.create({
-      ...dto,
-      model,
-      order: dto.order ?? dto.durationMonths, // اگر order داده نشد، بر اساس مدت زمان مرتب شود
-    });
-
-    const saved = await this.planRepo.save(plan);
-
-    // ۳. پاک‌سازی کش مرتبط
-    await this.cacheClearService.clearByPattern('cache:*installment-plans*');
-    await this.cacheClearService.clearByPattern('cache:*vehicle-models*');
-
-    return saved;
-  }
-  // ============================================================
+  // ==================== Public ====================
 
   async findByModelSlug(slug: string): Promise<InstallmentPlan[]> {
     const model = await this.modelRepo.findOne({ where: { slug } });
@@ -57,24 +34,80 @@ export class InstallmentPlanService {
     });
   }
 
-  async findAllForAdmin(q: AdminPaginationDto): Promise<PaginatedResponseDto<InstallmentPlan>> {
-    const [data, total] = await this.planRepo.findAndCount({
-      relations: { model: { vehicle: { brand: true } } },
-      select: {
-        id: true, durationMonths: true, monthlyAmount: true,
-        totalInstallments: true, isHighlighted: true, order: true,
-        isActive: true, createdAt: true, updatedAt: true,
-        model: {
-          id: true, title: true, slug: true,
-          vehicle: { id: true, title: true, slug: true, brand: { id: true, title: true, slug: true } },
-        },
-      },
-      order: { [q.sortBy || 'durationMonths']: q.sortOrder || 'ASC' },
-      skip: q.skip,
-      take: q.limit,
-    });
+  // ==================== Admin ====================
 
-    return PaginatedResponseDto.create(data, total, q.page!, q.limit!);
+  async findAllForAdmin(q: InstallmentFilterDto): Promise<PaginatedResponseDto<InstallmentPlan>> {
+    const {
+      page = 1, limit = 10, sortBy = 'durationMonths', sortOrder = 'ASC',
+      modelId, vehicleId, brandId,
+      minDuration, maxDuration,
+      minMonthlyAmount, maxMonthlyAmount,
+      isHighlighted, isActive,
+    } = q;
+
+    const qb = this.planRepo
+      .createQueryBuilder('plan')
+      .leftJoinAndSelect('plan.model', 'model')
+      .leftJoinAndSelect('model.vehicle', 'vehicle')
+      .leftJoinAndSelect('vehicle.brand', 'brand')
+      .leftJoinAndSelect('brand.product', 'product')
+      .select([
+        'plan.id', 'plan.durationMonths', 'plan.monthlyAmount',
+        'plan.totalInstallments', 'plan.isHighlighted', 'plan.order',
+        'plan.isActive', 'plan.createdAt', 'plan.updatedAt',
+        'model.id', 'model.title', 'model.slug',
+        'vehicle.id', 'vehicle.title', 'vehicle.slug',
+        'brand.id', 'brand.title', 'brand.slug',
+        'product.id', 'product.title', 'product.slug',
+      ]);
+
+    if (modelId) {
+      qb.andWhere('plan.model_id = :modelId', { modelId });
+    }
+
+    if (vehicleId) {
+      qb.andWhere('model.vehicle_id = :vehicleId', { vehicleId });
+    }
+
+    if (brandId) {
+      qb.andWhere('vehicle.brand_id = :brandId', { brandId });
+    }
+
+    if (minDuration !== undefined) {
+      qb.andWhere('plan.durationMonths >= :minDuration', { minDuration });
+    }
+
+    if (maxDuration !== undefined) {
+      qb.andWhere('plan.durationMonths <= :maxDuration', { maxDuration });
+    }
+
+    if (minMonthlyAmount !== undefined) {
+      qb.andWhere('plan.monthlyAmount >= :minMonthlyAmount', { minMonthlyAmount });
+    }
+
+    if (maxMonthlyAmount !== undefined) {
+      qb.andWhere('plan.monthlyAmount <= :maxMonthlyAmount', { maxMonthlyAmount });
+    }
+
+    if (isHighlighted !== undefined) {
+      qb.andWhere('plan.isHighlighted = :isHighlighted', { isHighlighted });
+    }
+
+    if (isActive !== undefined) {
+      qb.andWhere('plan.isActive = :isActive', { isActive });
+    }
+
+    const validSortFields = ['durationMonths', 'monthlyAmount', 'totalInstallments', 'createdAt', 'updatedAt'];
+    const safeSortBy = validSortFields.includes(sortBy) ? sortBy : 'durationMonths';
+    const safeSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
+
+    qb.orderBy(`plan.${safeSortBy}`, safeSortOrder);
+
+    qb.skip((page - 1) * limit).take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
+
+    return PaginatedResponseDto.create(data, total, page, limit);
   }
 
   async bulkCreate(modelId: string, dto: BulkCreateInstallmentPlansDto): Promise<InstallmentPlan[]> {
@@ -89,40 +122,41 @@ export class InstallmentPlanService {
     await this.planRepo.delete({ model: { id: modelId } });
 
     const plans = dto.plans.map((p) =>
-      this.planRepo.create({ ...p, model, order: p.order ?? p.durationMonths }),
+      this.planRepo.create({
+        durationMonths: p.durationMonths,
+        monthlyAmount: p.monthlyAmount,       
+        totalInstallments: p.totalInstallments, 
+        isHighlighted: p.isHighlighted ?? false,
+        secondDownPaymentMonth: p.secondDownPaymentMonth ?? this.calculateSecondDownPaymentMonth(p.durationMonths), // ✅ رفع خطا
+        order: p.order ?? p.durationMonths,
+        model: model,
+      })
     );
 
     const saved = await this.planRepo.save(plans);
-    
-    // ✅ پاک‌سازی کش
     await this.cacheClearService.clearByPattern('cache:*installment-plans*');
     await this.cacheClearService.clearByPattern('cache:*vehicle-models*');
-    
     return saved;
   }
 
   async update(id: string, dto: UpdateInstallmentPlanDto): Promise<InstallmentPlan> {
     const plan = await this.planRepo.findOne({ where: { id } });
     if (!plan) throw new NotFoundException('پلن اقساط یافت نشد');
-
     Object.assign(plan, dto);
     const saved = await this.planRepo.save(plan);
-    
-    // ✅ پاک‌سازی کش
     await this.cacheClearService.clearByPattern('cache:*installment-plans*');
     await this.cacheClearService.clearByPattern('cache:*vehicle-models*');
-    
     return saved;
   }
 
   async remove(id: string): Promise<void> {
     const plan = await this.planRepo.findOne({ where: { id } });
     if (!plan) throw new NotFoundException('پلن اقساط یافت نشد');
-
     await this.planRepo.remove(plan);
-    
-    // ✅ پاک‌سازی کش
     await this.cacheClearService.clearByPattern('cache:*installment-plans*');
     await this.cacheClearService.clearByPattern('cache:*vehicle-models*');
+  }
+  private calculateSecondDownPaymentMonth(durationMonths: number): number {
+    return durationMonths <= 36 ? 2 : 7;
   }
 }

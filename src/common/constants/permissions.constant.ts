@@ -23,10 +23,10 @@ export const PERMISSIONS = {
   ROLES_DELETE: { resource: PermissionResource.ROLES, action: PermissionAction.DELETE, code: 'roles:delete', displayName: 'حذف نقش' },
 
   // ==================== دسته‌بندی‌ها ====================
-  CATEGORIES_CREATE: { resource: PermissionResource.CATEGORIES, action: PermissionAction.CREATE, code: 'categories:create', displayName: 'ایجاد دسته‌بندی' },
-  CATEGORIES_READ: { resource: PermissionResource.CATEGORIES, action: PermissionAction.READ, code: 'categories:read', displayName: 'مشاهده دسته‌بندی' },
-  CATEGORIES_UPDATE: { resource: PermissionResource.CATEGORIES, action: PermissionAction.UPDATE, code: 'categories:update', displayName: 'ویرایش دسته‌بندی' },
-  CATEGORIES_DELETE: { resource: PermissionResource.CATEGORIES, action: PermissionAction.DELETE, code: 'categories:delete', displayName: 'حذف دسته‌بندی' },
+  products_CREATE: { resource: PermissionResource.products, action: PermissionAction.CREATE, code: 'products:create', displayName: 'ایجاد دسته‌بندی' },
+  products_READ: { resource: PermissionResource.products, action: PermissionAction.READ, code: 'products:read', displayName: 'مشاهده دسته‌بندی' },
+  products_UPDATE: { resource: PermissionResource.products, action: PermissionAction.UPDATE, code: 'products:update', displayName: 'ویرایش دسته‌بندی' },
+  products_DELETE: { resource: PermissionResource.products, action: PermissionAction.DELETE, code: 'products:delete', displayName: 'حذف دسته‌بندی' },
 
   // ==================== برندها ====================
   BRANDS_CREATE: { resource: PermissionResource.BRANDS, action: PermissionAction.CREATE, code: 'brands:create', displayName: 'ایجاد برند' },

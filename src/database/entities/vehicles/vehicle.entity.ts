@@ -9,7 +9,7 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
-import { Brand } from '../category/brand.entity';
+import { Brand } from '../product/brand.entity';
 import { VehicleModel } from './vehicle-model.entity';
 
 @Index('IDX_vehicle_brand_active_order', ['brand', 'isActive', 'order'])

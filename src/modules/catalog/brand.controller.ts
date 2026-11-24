@@ -1,5 +1,12 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, UseInterceptors, ParseUUIDPipe } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiConsumes, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Controller, Get, Post, Put, Delete, Body, Param, Query,
+  UseGuards, UseInterceptors, ParseUUIDPipe,
+} from '@nestjs/common';
+import {
+  ApiTags, ApiOperation, ApiConsumes, ApiQuery, ApiBearerAuth,
+  ApiParam,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { BrandService } from './brand.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -7,36 +14,51 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { RoleName } from '../../database/entities/role-permission/role.entity';
 import { CreateBrandDto } from './dto/create-brand.dto';
 import { UpdateBrandDto } from './dto/update-brand.dto';
+import { BrandFilterDto } from './dto/brand-filter.dto';
 import { AdminPaginationDto } from '../../common/dto/admin-pagination.dto';
+import { PaginatedResponseDto } from '../../common/dto/pagination-response.dto';
 import { ApiPaginatedResponse } from '../../common/decorators/api-paginated-response.decorator';
 import { CacheInterceptor } from '../../common/interceptors/cache.interceptor';
-import { Brand } from '../../database/entities/category/brand.entity';
+import { Brand } from '../../database/entities/product/brand.entity';
 
 @ApiTags('برندها (Brands)')
-@Controller()
+@Controller('brands')
 export class BrandController {
-  constructor(private readonly brandService: BrandService) {}
+  constructor(private readonly brandService: BrandService) { }
+
 
   @Public()
-  @Get('categories/:slug/brands')
+  @Get('product/:slug')
   @ApiOperation({ summary: 'برندهای یک دسته‌بندی' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'isActive', required: false })
+  @ApiPaginatedResponse(Brand)
   @UseInterceptors(CacheInterceptor)
-  findBrandsByCategory(@Param('slug') slug: string, @Query() q: AdminPaginationDto) {
-    return this.brandService.findActiveByCategorySlug(slug, q);
+  findActiveByProduct(@Param('slug') slug: string, @Query() filter: BrandFilterDto): Promise<PaginatedResponseDto<Brand>> {
+    return this.brandService.findActiveByProductSlug(slug, filter);
   }
 
   @Public()
-  @Get('brands/slug/:slug')
+  @Get(':slug')
+  @ApiOperation({ summary: 'صفحه کامل برند (همه خودروها + مدل‌ها + جدول اقساط)' })
+  @ApiParam({ name: 'slug', description: 'اسلاگ برند (مثلاً iran-khodro)' })
+  @ApiOkResponse({ description: 'داده‌های کامل برند با موفقیت دریافت شد' })
+  @UseInterceptors(CacheInterceptor)
+  findBrandPage(@Param('slug') slug: string) {
+    return this.brandService.findBrandPage(slug);
+  }
+  @Public()
+  @Get('slug/:slug')
   @ApiOperation({ summary: 'جزئیات یک برند' })
   @UseInterceptors(CacheInterceptor)
-  findBySlug(@Param('slug') slug: string) {
+  findBySlug(@Param('slug') slug: string): Promise<Brand> {
     return this.brandService.findBySlug(slug);
   }
 
-  @ApiTags('پنل مدیریت (Admin)')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @Get('admin/brands')
+  @Get('admin')
   @Roles(RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.OPERATOR)
   @ApiOperation({ summary: 'لیست برندها (ادمین)' })
   @ApiQuery({ name: 'page', required: false })
@@ -46,50 +68,46 @@ export class BrandController {
   @ApiQuery({ name: 'search', required: false })
   @ApiPaginatedResponse(Brand)
   @UseInterceptors(CacheInterceptor)
-  findAllForAdmin(@Query() q: AdminPaginationDto) {
+  findAllForAdmin(@Query() q: AdminPaginationDto): Promise<PaginatedResponseDto<Brand>> {
     return this.brandService.findAllForAdmin(q);
   }
 
-  @ApiTags('پنل مدیریت (Admin)')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @Get('admin/brands/:id')
+  @Get('admin/:id')
   @Roles(RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.OPERATOR)
   @ApiOperation({ summary: 'جزئیات یک برند' })
   @UseInterceptors(CacheInterceptor)
-  findOne(@Param('id',ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Brand> {
     return this.brandService.findOne(id);
   }
 
-  @ApiTags('پنل مدیریت (Admin)')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @Post('categories/:categoryId/brands')
-  @ApiConsumes('application/x-www-form-urlencoded')
+  @Post()
+  @ApiConsumes('application/x-www-form-urlencoded', 'application/json')
   @Roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)
   @ApiOperation({ summary: 'ایجاد برند' })
-  create(@Param('categoryId') categoryId: string, @Body() dto: CreateBrandDto) {
-    return this.brandService.create(categoryId, dto);
+  create(@Body() dto: CreateBrandDto & { productId: string }): Promise<Brand> {
+    return this.brandService.create(dto.productId, dto);
   }
 
-  @ApiTags('پنل مدیریت (Admin)')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @Put('brands/:id')
-  @ApiConsumes('application/x-www-form-urlencoded')
+  @Put(':id')
+  @ApiConsumes('application/x-www-form-urlencoded', 'application/json')
   @Roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)
   @ApiOperation({ summary: 'ویرایش برند' })
-  update(@Param('id',ParseUUIDPipe) id: string, @Body() dto: UpdateBrandDto) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateBrandDto): Promise<Brand> {
     return this.brandService.update(id, dto);
   }
 
-  @ApiTags('پنل مدیریت (Admin)')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @Delete('brands/:id')
+  @Delete(':id')
   @Roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)
   @ApiOperation({ summary: 'حذف برند' })
-  remove(@Param('id',ParseUUIDPipe) id: string) {
+  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.brandService.remove(id);
   }
 }

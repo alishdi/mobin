@@ -15,10 +15,11 @@ import { Submenu } from './entities/menu/sub-menu.entity';
 import { Megamenu } from './entities/menu/mega-menu.entity';
 import { Slider } from './entities/slider.entity';
 import { Footer } from './entities/footer/footer.entity';
-import { Category } from './entities/category/category.entity';
-import { Brand } from './entities/category/brand.entity';
+import { Product } from './entities/product/product.entity';
+import { Brand } from './entities/product/brand.entity';
 import { VehicleModel } from './entities/vehicles/vehicle-model.entity';
 import { InstallmentPlan } from './entities/installment/installment-plan.entity';
+import { ApiClient } from './entities/api-client/api-client.entity';
 
 export default new DataSource({
   type: 'postgres',
@@ -36,10 +37,11 @@ export default new DataSource({
     Megamenu,
     Slider,
     Footer,
-    Category,
+    Product,
     Brand,
     VehicleModel,
-    InstallmentPlan
+    InstallmentPlan,
+    ApiClient
   ],
   migrations: ['src/database/migrations/*.ts'],
   synchronize: false,

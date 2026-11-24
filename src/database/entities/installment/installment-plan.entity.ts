@@ -1,34 +1,31 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
-  Index,
-  BeforeInsert,
-  BeforeUpdate,
-} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { VehicleModel } from '../vehicles/vehicle-model.entity';
 
-@Index('IDX_plan_model_active_duration', ['model', 'isActive', 'durationMonths'])
 @Entity('installment_plans')
 export class InstallmentPlan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'int', comment: 'مدت اقساط (ماه): 12, 24, 36, 48, 60, 72' })
+  @Column({ type: 'int' })
   @Index()
   durationMonths: number;
 
-  @Column({ type: 'decimal', precision: 15, scale: 0, comment: 'مبلغ هر قسط (تومان)' })
+  @Column({ type: 'numeric', precision: 15, scale: 0 })
   monthlyAmount: number;
 
-  @Column({ type: 'decimal', precision: 15, scale: 0, nullable: true, comment: 'مجموع اقساط (محاسبه‌شده)' })
+  @Column({ type: 'numeric', precision: 15, scale: 0 })
   totalInstallments: number;
 
-  @Column({ type: 'boolean', default: false, comment: 'ردیف برجسته (قرمز) در جدول' })
+  @Column({ type: 'numeric', precision: 15, scale: 0 })
+  firstDownPayment: number;
+
+  @Column({ type: 'numeric', precision: 15, scale: 0 })
+  totalPrice: number;
+
+  @Column({ type: 'int', default: 2 })
+  secondDownPaymentMonth: number;
+
+  @Column({ type: 'boolean', default: false })
   isHighlighted: boolean;
 
   @Column({ type: 'int', default: 0 })
@@ -46,15 +43,4 @@ export class InstallmentPlan {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
-
-  /**
-   * محاسبه خودکار مجموع اقساط قبل از ذخیره
-   */
-  @BeforeInsert()
-  @BeforeUpdate()
-  calculateTotal() {
-    if (this.monthlyAmount && this.durationMonths) {
-      this.totalInstallments = Number(this.monthlyAmount) * this.durationMonths;
-    }
-  }
 }

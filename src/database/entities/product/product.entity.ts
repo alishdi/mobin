@@ -9,8 +9,8 @@ import {
 } from 'typeorm';
 import { Brand } from './brand.entity';
 
-@Entity('categories')
-export class Category {
+@Entity('products')
+export class Product {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
@@ -37,7 +37,7 @@ export class Category {
     @Column({ type: 'boolean', default: true })
     isActive: boolean;
 
-    @OneToMany(() => Brand, (brand) => brand.category)
+    @OneToMany(() => Brand, (brand) => brand.product)
     brands: Brand[];
 
     @CreateDateColumn({ name: 'created_at' })

@@ -11,7 +11,7 @@ import { InstallmentPlanService } from './installment-plan.service';
 import { Vehicle } from '../../database/entities/vehicles/vehicle.entity';
 import { VehicleModel } from '../../database/entities/vehicles/vehicle-model.entity';
 import { InstallmentPlan } from '../../database/entities/installment/installment-plan.entity';
-import { Brand } from '../../database/entities/category/brand.entity';
+import { Brand } from '../../database/entities/product/brand.entity';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Vehicle, VehicleModel, InstallmentPlan, Brand])],

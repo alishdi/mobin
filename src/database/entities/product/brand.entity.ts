@@ -9,10 +9,10 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
-import { Category } from './category.entity';
+import { Product } from './product.entity';
 import { Vehicle } from '../vehicles/vehicle.entity';
 
-@Index('IDX_brand_category_active_order', ['category', 'isActive', 'order'])
+@Index('IDX_brand_product_active_order', ['product', 'isActive', 'order'])
 @Entity('brands')
 export class Brand {
   @PrimaryGeneratedColumn('uuid')
@@ -38,11 +38,10 @@ export class Brand {
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
-  @ManyToOne(() => Category, (category) => category.brands, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'category_id' })
-  category: Category;
+  @ManyToOne(() => Product, (product) => product.brands, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'product_id' })
+  product: Product;
 
-  // ✅ اضافه شد: رابطه یک به چند با Vehicle
   @OneToMany(() => Vehicle, (vehicle) => vehicle.brand)
   vehicles: Vehicle[];
 

@@ -24,7 +24,7 @@ export enum PermissionResource {
   SLIDERS = 'sliders',
   FOOTERS = 'footers',
   REPORTS = 'reports',
-  CATEGORIES = 'categories',
+  products = 'products',
   BRANDS = 'brands',
 }
 

@@ -42,4 +42,11 @@ export class CreateInstallmentPlanDto {
   @IsBoolean()
   @Type(() => Boolean)
   isActive?: boolean;
+  @ApiPropertyOptional({ description: 'ماه پرداخت پیش‌پرداخت دوم (2 یا 7)', default: 'auto' })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  secondDownPaymentMonth?: number; // ✅ این خط باید وجود داشته باشد
+
 }

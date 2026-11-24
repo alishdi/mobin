@@ -4,15 +4,15 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository } from 'typeorm';
 import { VehicleModel } from '../../database/entities/vehicles/vehicle-model.entity';
 import { Vehicle } from '../../database/entities/vehicles/vehicle.entity';
 import { CreateVehicleModelDto } from './dto/create-vehicle-model.dto';
 import { UpdateVehicleModelDto } from './dto/update-vehicle-model.dto';
+import { ModelFilterDto } from './dto/vehicle-model-filter.dto';
 import { AdminPaginationDto } from '../../common/dto/admin-pagination.dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination-response.dto';
 import { CacheClearService } from '../../common/services/cache-clear.service';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 @Injectable()
 export class VehicleModelService {
@@ -20,15 +20,15 @@ export class VehicleModelService {
     @InjectRepository(VehicleModel) private readonly modelRepo: Repository<VehicleModel>,
     @InjectRepository(Vehicle) private readonly vehicleRepo: Repository<Vehicle>,
     private readonly cacheClearService: CacheClearService,
-  ) { }
+  ) {}
 
   // ==================== Public ====================
 
-  async findActiveByVehicleSlug(
-    vehicleSlug: string,
-    q: PaginationQueryDto,
-  ): Promise<{ vehicle: Partial<Vehicle>; models: PaginatedResponseDto<VehicleModel> }> {
-    const { page = 1, limit = 12 } = q;
+  async findActiveByVehicleSlug(vehicleSlug: string, filter: ModelFilterDto): Promise<PaginatedResponseDto<VehicleModel>> {
+    const {
+      page = 1, limit = 12, year, isFeatured, isActive = true,
+      minPrice, maxPrice,
+    } = filter;
 
     const vehicle = await this.vehicleRepo.findOne({
       where: { slug: vehicleSlug, isActive: true },
@@ -38,36 +38,54 @@ export class VehicleModelService {
 
     const qb = this.modelRepo
       .createQueryBuilder('model')
-      .where('model.vehicleId = :vehicleId', { vehicleId: vehicle.id })
-      .andWhere('model.isActive = :active', { active: true })
+      .leftJoinAndSelect('model.vehicle', 'vehicle')
+      .leftJoinAndSelect('vehicle.brand', 'brand')
+      .leftJoinAndSelect('brand.product', 'product')
+      .leftJoinAndSelect('model.installmentPlans', 'plan', 'plan.isActive = :planActive', { planActive: true })
+      .where('model.vehicle_id = :vehicleId', { vehicleId: vehicle.id })
+      .andWhere('model.isActive = :isActive', { isActive })
       .select([
-        'model.id',
-        'model.title',
-        'model.slug',
-        'model.year',
-        'model.mileage',
-        'model.firstDownPayment',
-        'model.totalPrice',
-        'model.imageUrl',
-        'model.isFeatured',
-        'model.order',
-      ])
-      .orderBy('model.order', 'ASC');
+        'model.id', 'model.title', 'model.slug', 'model.year',
+        'model.mileage', 'model.firstDownPayment', 'model.totalPrice',
+        'model.imageUrl', 'model.isFeatured', 'model.order', 'model.isActive',
+        'model.createdAt', 'model.updatedAt',
+        'vehicle.id', 'vehicle.title', 'vehicle.slug',
+        'brand.id', 'brand.title', 'brand.slug',
+        'product.id', 'product.title', 'product.slug',
+        'plan.id', 'plan.durationMonths', 'plan.monthlyAmount',
+        'plan.totalInstallments', 'plan.isHighlighted', 'plan.isActive',
+      ]);
+
+    if (year) {
+      qb.andWhere('model.year = :year', { year });
+    }
+
+    if (isFeatured !== undefined) {
+      qb.andWhere('model.isFeatured = :isFeatured', { isFeatured });
+    }
+
+    if (minPrice !== undefined) {
+      qb.andWhere('model.totalPrice >= :minPrice', { minPrice });
+    }
+
+    if (maxPrice !== undefined) {
+      qb.andWhere('model.totalPrice <= :maxPrice', { maxPrice });
+    }
+
+    qb.orderBy('model.order', 'ASC')
+      .addOrderBy('plan.durationMonths', 'ASC');
 
     qb.skip((page - 1) * limit).take(limit);
 
-    const [models, total] = await qb.getManyAndCount();
+    const [data, total] = await qb.getManyAndCount();
 
-    return {
-      vehicle,
-      models: PaginatedResponseDto.create(models, total, page, limit),
-    };
+    return PaginatedResponseDto.create(data, total, page, limit);
   }
 
   async findWithPlans(slug: string): Promise<VehicleModel> {
     const model = await this.modelRepo.findOne({
       where: { slug, isActive: true },
-      relations: { vehicle: { brand: { category: true } }, installmentPlans: true },
+      relations: { vehicle: { brand: { product: true } }, installmentPlans: true },
     });
     if (!model) throw new NotFoundException('مدل خودرو یافت نشد');
 
@@ -80,68 +98,76 @@ export class VehicleModelService {
 
   // ==================== Admin ====================
 
-async findAllForAdmin(q: AdminPaginationDto): Promise<PaginatedResponseDto<VehicleModel>> {
-  const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'DESC', search } = q;
-  const searchTerm = search?.trim();
+  async findAllForAdmin(q: ModelFilterDto): Promise<PaginatedResponseDto<VehicleModel>> {
+    const {
+      page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'DESC', search,
+      vehicleId, brandId, year, isFeatured, isActive,
+      minPrice, maxPrice,
+    } = q;
 
-  const qb = this.modelRepo
-    .createQueryBuilder('model')
-    .leftJoinAndSelect('model.vehicle', 'vehicle')
-    .leftJoinAndSelect('vehicle.brand', 'brand')
-    .select([
-      'model.id',
-      'model.title',
-      'model.slug',
-      'model.year',
-      'model.mileage',
-      'model.firstDownPayment',
-      'model.totalPrice',
-      'model.imageUrl',
-      'model.order',
-      'model.isActive',
-      'model.isFeatured',
-      'model.createdAt',
-      'model.updatedAt',
-      'vehicle.id',
-      'vehicle.title',
-      'vehicle.slug',
-      'brand.id',
-      'brand.title',
-      'brand.slug',
-    ]);
+    const qb = this.modelRepo
+      .createQueryBuilder('model')
+      .leftJoinAndSelect('model.vehicle', 'vehicle')
+      .leftJoinAndSelect('vehicle.brand', 'brand')
+      .leftJoinAndSelect('brand.product', 'product')
+      .leftJoinAndSelect('model.installmentPlans', 'plan', 'plan.isActive = :planActive', { planActive: true })
+      .select([
+        'model.id', 'model.title', 'model.slug', 'model.year',
+        'model.mileage', 'model.firstDownPayment', 'model.totalPrice',
+        'model.imageUrl', 'model.isFeatured', 'model.order', 'model.isActive',
+        'model.createdAt', 'model.updatedAt',
+        'vehicle.id', 'vehicle.title', 'vehicle.slug',
+        'brand.id', 'brand.title', 'brand.slug',
+        'product.id', 'product.title', 'product.slug',
+        'plan.id', 'plan.durationMonths', 'plan.monthlyAmount',
+        'plan.totalInstallments', 'plan.isHighlighted', 'plan.isActive',
+      ]);
 
-  // ✅ استفاده از ILike با کلمات جداگانه
-  if (searchTerm && searchTerm.length >= 2) {
-    // تقسیم جستجو به کلمات جداگانه
-    const words = searchTerm.split(/\s+/).filter(w => w.length >= 2);
-    
-    if (words.length > 0) {
-      const conditions = words.map((word, index) => {
-        return `(model.title ILIKE :word${index} OR model.slug ILIKE :word${index} OR vehicle.title ILIKE :word${index} OR brand.title ILIKE :word${index})`;
-      });
-      
-      const params = words.reduce((acc, word, index) => {
-        acc[`word${index}`] = `%${word}%`;
-        return acc;
-      }, {});
-      
-      qb.andWhere(`(${conditions.join(' OR ')})`, params);
+    if (search && search.length >= 2) {
+      qb.andWhere('(model.title ILIKE :search OR model.slug ILIKE :search)', { search: `%${search}%` });
     }
+
+    if (vehicleId) {
+      qb.andWhere('model.vehicle_id = :vehicleId', { vehicleId });
+    }
+
+    if (brandId) {
+      qb.andWhere('vehicle.brand_id = :brandId', { brandId });
+    }
+
+    if (year) {
+      qb.andWhere('model.year = :year', { year });
+    }
+
+    if (isFeatured !== undefined) {
+      qb.andWhere('model.isFeatured = :isFeatured', { isFeatured });
+    }
+
+    if (isActive !== undefined) {
+      qb.andWhere('model.isActive = :isActive', { isActive });
+    }
+
+    if (minPrice !== undefined) {
+      qb.andWhere('model.totalPrice >= :minPrice', { minPrice });
+    }
+
+    if (maxPrice !== undefined) {
+      qb.andWhere('model.totalPrice <= :maxPrice', { maxPrice });
+    }
+
+    const validSortFields = ['createdAt', 'updatedAt', 'order', 'title', 'year', 'totalPrice'];
+    const safeSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const safeSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
+
+    qb.orderBy(`model.${safeSortBy}`, safeSortOrder)
+      .addOrderBy('plan.durationMonths', 'ASC');
+
+    qb.skip((page - 1) * limit).take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
+
+    return PaginatedResponseDto.create(data, total, page, limit);
   }
-
-  // ✅ مرتب‌سازی
-  const validSortFields = ['createdAt', 'updatedAt', 'order', 'title', 'year', 'totalPrice'];
-  const safeSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
-  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-  qb.orderBy(`model.${safeSortBy}`, safeSortOrder);
-
-  qb.skip((page - 1) * limit).take(limit);
-
-  const [data, total] = await qb.getManyAndCount();
-
-  return PaginatedResponseDto.create(data, total, page, limit);
-}
 
   async findOne(id: string): Promise<VehicleModel> {
     const model = await this.modelRepo.findOne({
@@ -155,10 +181,8 @@ async findAllForAdmin(q: AdminPaginationDto): Promise<PaginatedResponseDto<Vehic
   async create(vehicleId: string, dto: CreateVehicleModelDto): Promise<VehicleModel> {
     const vehicle = await this.vehicleRepo.findOne({ where: { id: vehicleId } });
     if (!vehicle) throw new NotFoundException('خودرو والد یافت نشد');
-
     const exists = await this.modelRepo.findOne({ where: { slug: dto.slug } });
     if (exists) throw new ConflictException('این slug قبلاً استفاده شده است');
-
     const saved = await this.modelRepo.save(this.modelRepo.create({ ...dto, vehicle }));
     await this.cacheClearService.clearByPattern('cache:*vehicle-models*');
     await this.cacheClearService.clearByPattern('cache:*vehicles*');
@@ -168,12 +192,10 @@ async findAllForAdmin(q: AdminPaginationDto): Promise<PaginatedResponseDto<Vehic
   async update(id: string, dto: UpdateVehicleModelDto): Promise<VehicleModel> {
     const model = await this.modelRepo.findOne({ where: { id } });
     if (!model) throw new NotFoundException('مدل یافت نشد');
-
     if (dto.slug && dto.slug !== model.slug) {
       const exists = await this.modelRepo.findOne({ where: { slug: dto.slug } });
       if (exists) throw new ConflictException('این slug قبلاً استفاده شده است');
     }
-
     Object.assign(model, dto);
     const saved = await this.modelRepo.save(model);
     await this.cacheClearService.clearByPattern('cache:*vehicle-models*');
@@ -184,7 +206,6 @@ async findAllForAdmin(q: AdminPaginationDto): Promise<PaginatedResponseDto<Vehic
   async remove(id: string): Promise<void> {
     const model = await this.modelRepo.findOne({ where: { id } });
     if (!model) throw new NotFoundException('مدل یافت نشد');
-
     await this.modelRepo.remove(model);
     await this.cacheClearService.clearByPattern('cache:*vehicle-models*');
     await this.cacheClearService.clearByPattern('cache:*vehicles*');
